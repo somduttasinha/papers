@@ -7,7 +7,11 @@ export default defineNuxtConfig({
     devtools: { enabled: true },
     modules: ["nuxtjs-naive-ui"],
     compatibilityDate: "2025-07-15",
-
+    runtimeConfig: {
+        public: {
+            apiBase: "http://localhost:8080",
+        },
+    },
     vite: {
         plugins: [
             AutoImport({

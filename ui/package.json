@@ -21,6 +21,8 @@
     "vueuc": "^0.4.64"
   },
   "devDependencies": {
+    "@vicons/fluent": "^0.13.0",
+    "@vueuse/core": "^13.6.0",
     "unplugin-auto-import": "^20.0.0",
     "unplugin-vue-components": "^29.0.0"
   }

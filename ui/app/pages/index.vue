@@ -4,7 +4,7 @@
         <!-- Page content -->
         <n-layout-content style="padding: 24px">
             <NCard size="large">
-                <NUpload multiple directory-dnd :max="5" :custom-request="customRequest">
+                <NUpload multiple directory-dnd :custom-request="customRequest">
                     <NUploadDragger>
                         <div style="margin-bottom: 12px">
                             <NIcon size="48" :depth="3">
@@ -31,9 +31,8 @@ async function customRequest({ file, onFinish, onError }) {
     const formData = new FormData();
     formData.append("file", file.file);
 
-
     try {
-        const res = await fetch("http://10.20.10.1:8080/api/upload/doc", {
+        const res = await fetch("http://localhost:8080/api/upload/doc", {
             method: "POST",
             body: formData,
         });

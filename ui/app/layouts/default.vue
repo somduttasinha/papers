@@ -15,7 +15,8 @@
                         <h2 class="logo">papers</h2>
                     </div>
                     <div class="nav-centre">
-                        <n-input round placeholder="Search..." clearable size="small" style="width: 200px" />
+                        <NAutoComplete v-model:value="q" :options="options" placeholder="Search..." clearable
+                            size="small" round @select="onSelect" />
                     </div>
 
                     <div class="nav-right">
@@ -48,13 +49,57 @@ import {
     PersonOutline as PersonIcon,
     WineOutline as WineIcon,
 } from "@vicons/ionicons5";
-import { NIcon, useMessage } from "naive-ui";
+
+import { useDebounceFn } from "@vueuse/core";
+
+import { NAutoComplete, NIcon, useMessage } from "naive-ui";
 
 function renderIcon(icon: Component) {
     return () => h(NIcon, null, { default: () => h(icon) });
 }
 
 const message = useMessage();
+
+const q = ref("");
+const options = ref<string[]>([]);
+const {
+    public: { apiBase = "" },
+} = useRuntimeConfig();
+
+let aborter: AbortController | null = null;
+
+const fetchSuggestions = useDebounceFn(async () => {
+    if (!q.value.trim()) {
+        options.value = [];
+        return;
+    }
+
+    aborter?.abort();
+    aborter = new AbortController();
+
+    const { data, error } = await useFetch<string[]>(`${apiBase}/api/search`, {
+        method: "GET",
+        query: {
+            query: q.value,
+        },
+        signal: aborter.signal as any,
+    });
+
+    if (!error.value && Array.isArray(data.value)) {
+        options.value = data.value;
+    } else {
+        options.value = [];
+    }
+}, 200);
+
+watch([q], () => {
+    fetchSuggestions();
+});
+
+function onSelect(value: string) {
+    q.value = value;
+    console.log("selected", value);
+}
 
 const menuOptions: MenuOption[] = [
     {
