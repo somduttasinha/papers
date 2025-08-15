@@ -7,27 +7,6 @@
 
         <div class="meta">
             <h3 class="title" v-if="title">{{ title }}</h3>
-
-            <div class="row" v-if="date">
-                <span class="ico" aria-hidden="true">
-                    <!-- calendar -->
-                    <svg viewBox="0 0 24 24">
-                        <path
-                            d="M7 2v2H5a2 2 0 0 0-2 2v2h18V6a2 2 0 0 0-2-2h-2V2h-2v2H9V2H7zm14 8H3v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V10z" />
-                    </svg>
-                </span>
-                <time :datetime="date">{{ formattedDate }}</time>
-            </div>
-
-            <div class="row" v-if="pages != null">
-                <span class="ico" aria-hidden="true">
-                    <!-- page/file -->
-                    <svg viewBox="0 0 24 24">
-                        <path d="M14 2H6a2 2 0 0 0-2 2v16c0 1.1.9 2 2 2h12a2 2 0 0 0 2-2V8l-6-6zM14 9V3.5L19.5 9H14z" />
-                    </svg>
-                </span>
-                <span>{{ pages }} {{ pages === 1 ? "Page" : "Pages" }}</span>
-            </div>
         </div>
 
         <div class="actions">
@@ -38,21 +17,26 @@
             <button class="action" :href="downloadUrl" download aria-label="Download document">
                 <ArrowDownload16Regular />
             </button>
+
+            <a class="action">
+                <Share24Regular />
+            </a>
         </div>
     </article>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
-import { ArrowDownload16Regular, Eye24Regular } from "@vicons/fluent";
+import {
+    ArrowDownload16Regular,
+    Eye24Regular,
+    Share24Regular,
+} from "@vicons/fluent";
 const props = defineProps<{
     imageSrc: string;
     docId: string | number;
     /** Optional bits below */
-    title?: string;
-    date?: string; // ISO date like "1972-01-18"
-    pages?: number;
-    /** Override default download URL if you want */
+    title: string;
     downloadUrl?: string;
 }>();
 
@@ -63,19 +47,6 @@ const emitView = () => emit("view", props.docId);
 const titleAlt = computed(() =>
     props.title ? `Preview of ${props.title}` : "Document preview",
 );
-
-const formattedDate = computed(() => {
-    if (!props.date) return "";
-    try {
-        return new Date(props.date).toLocaleDateString(undefined, {
-            year: "numeric",
-            month: "2-digit",
-            day: "2-digit",
-        });
-    } catch {
-        return props.date;
-    }
-});
 
 const downloadHref = computed(
     () => props.downloadUrl ?? `/api/documents/${props.docId}/download`,
@@ -145,7 +116,7 @@ const downloadName = computed(
 
 .title {
     font-size: 1rem;
-    font-weight: 600;
+    font-weight: 500;
     color: #111827;
     margin: 0;
     line-height: 1.2;
