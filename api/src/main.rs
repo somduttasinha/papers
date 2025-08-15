@@ -1,44 +1,68 @@
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::Client;
+use aws_sdk_s3::config::Builder as S3ConfigBuilder;
+use aws_sdk_s3::primitives::ByteStream;
 use axum::body::Bytes;
 use diesel::{Connection, PgConnection, RunQueryDsl, SelectableHelper};
 use dotenvy::dotenv;
+use image::codecs::png::PngEncoder;
+use image::{ExtendedColorType, ImageEncoder};
 use std::collections::HashMap;
 use std::env;
-use std::io::stdout;
 use std::ops::DerefMut;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
 use tantivy::{Document, TantivyDocument};
+use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tokio::sync::Mutex;
 
 use axum::extract::{Query, State, multipart};
-use axum::routing::{get, get_service, post};
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use tantivy::collector::{Count, TopDocs};
 use tantivy::schema::{STORED, Schema, TEXT, Value};
 use tantivy::{Index, IndexWriter, ReloadPolicy};
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
-use tower_http::services::ServeDir;
 
 use crate::schema::documents;
 
 mod models;
+mod s3;
 mod schema;
 mod utils;
 
 struct AppState {
     index: Index,
     schema: Schema,
-    writer: Mutex<IndexWriter>,
-    connection: Mutex<PgConnection>,
+    writer: Mutex<IndexWriter>,      // thread safe index writer
+    connection: Mutex<PgConnection>, // thread safe db connection
+    s3_client: Mutex<Client>,        // thread safe s3 client
 }
 
 #[tokio::main]
 async fn main() -> tantivy::Result<()> {
-    let connection = establish_connection();
+    let connection = establish_connection(); // set up database
+
+    let base = aws_config::load_defaults(BehaviorVersion::latest()).await;
+    let mut cfg = S3ConfigBuilder::from(&base);
+
+    if let Ok(endpoint) = env::var("AWS_ENDPOINT_URL") {
+        cfg = cfg.endpoint_url(endpoint);
+    }
+
+    if env::var("AWS_S3_FORCE_PATH_STYLE").as_deref() == Ok("true") {
+        cfg = cfg.force_path_style(true);
+    }
+
+    let s3_client = Client::from_conf(cfg.build());
+
+    s3::ensure_bucket(&s3_client, "papers-dev")
+        .await
+        .expect("Expected to create bucket");
 
     let index_path_raw = "tmp/index";
     let index_dir = Path::new(&index_path_raw);
@@ -47,11 +71,11 @@ async fn main() -> tantivy::Result<()> {
 
     let mut schema_builder = Schema::builder();
 
-    let _ = schema_builder.add_text_field("title", TEXT | STORED);
+    schema_builder.add_text_field("title", TEXT | STORED);
 
-    let _ = schema_builder.add_text_field("id", STORED);
+    schema_builder.add_text_field("id", STORED);
 
-    let _ = schema_builder.add_text_field("body", TEXT);
+    schema_builder.add_text_field("body", TEXT);
 
     let schema = schema_builder.build();
 
@@ -66,16 +90,8 @@ async fn main() -> tantivy::Result<()> {
         schema,
         writer: Mutex::<tantivy::IndexWriter>::new(index_writer),
         connection: Mutex::<PgConnection>::new(connection),
+        s3_client: Mutex::<Client>::new(s3_client),
     });
-
-    let thumbnails_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tmp")
-        .join("thumbnails");
-
-    println!("Thumbnails path: {}", thumbnails_path.display());
-
-    let static_routes: Router<()> =
-        Router::new().nest_service("/thumbnails", get_service(ServeDir::new(thumbnails_path)));
 
     let get_documents_routes: Router<()> = Router::new()
         .route("/", get(get_all_docs))
@@ -92,8 +108,7 @@ async fn main() -> tantivy::Result<()> {
     let api_routes = Router::new()
         .nest("/upload", upload_routes)
         .nest("/search", search_routes)
-        .nest("/docs", get_documents_routes)
-        .nest("/static", static_routes);
+        .nest("/docs", get_documents_routes);
 
     let app = Router::new().nest("/api", api_routes).layer(
         CorsLayer::new()
@@ -113,6 +128,11 @@ async fn main() -> tantivy::Result<()> {
 /// we will save to disk as we receive them and build the tantivy::document in memory, we only
 /// commit once we have all the data for atomicity.
 async fn save_and_upsert(State(state): State<Arc<AppState>>, mut multipart: multipart::Multipart) {
+    let tmp = NamedTempFile::new().expect("Expected a tempfile"); // created on disk
+    let path = tmp.path();
+
+    println!("Path: {}", path.display());
+
     let mut doc = TantivyDocument::new();
     let schema = &state.schema;
 
@@ -123,6 +143,7 @@ async fn save_and_upsert(State(state): State<Arc<AppState>>, mut multipart: mult
     let mut set_field = false;
 
     let id = uuid::Uuid::new_v4().to_string();
+
     while let Some(field) = multipart.next_field().await.unwrap() {
         let name = field.name().unwrap().to_string();
         let filename = field.file_name().unwrap().to_string();
@@ -136,25 +157,54 @@ async fn save_and_upsert(State(state): State<Arc<AppState>>, mut multipart: mult
         let data: Bytes = field.bytes().await.unwrap();
 
         println!("Length of `{}` is {} bytes", name, data.len());
+
         if name == "file" {
-            let path = format!("tmp/docs/{}", filename);
-            // get absolute path
             tokio::fs::write(&path, &data).await.unwrap();
 
-            let contents =
-                utils::pdf_to_string(&Path::new(&format!("tmp/docs/{}", filename))).await;
+            let contents = utils::pdf_to_string(path).await;
 
-            match utils::export_pdf_to_jpegs(
-                &filename.strip_suffix(".pdf").unwrap().to_string(),
-                &path,
-                None,
-            ) {
-                Ok(image_path) => {
+            match utils::export_pdf_to_jpegs(&path, None) {
+                Ok(img_buf) => {
+                    let s3_client = &mut state.s3_client.lock().await;
+
+                    let mut buf = Vec::new();
+
+                    PngEncoder::new(&mut buf)
+                        .write_image(
+                            img_buf.as_raw(),
+                            img_buf.width(),
+                            img_buf.height(),
+                            ExtendedColorType::Rgb8,
+                        )
+                        .unwrap();
+
+                    s3::upload_object(
+                        &s3_client,
+                        "papers-dev",
+                        "application/pdf",
+                        &format!("{}/document.pdf", id),
+                        ByteStream::from_path(path)
+                            .await
+                            .expect("Failed to get bytes from path"),
+                    )
+                    .await
+                    .expect("Failed to upload to s3");
+
+                    s3::upload_object(
+                        &s3_client,
+                        "papers-dev",
+                        "image/png",
+                        &format!("{}/thumbnail.png", id),
+                        ByteStream::from(buf),
+                    )
+                    .await
+                    .expect("Failed to upload to s3");
+
                     let new_doc = crate::models::Document {
                         id: id.clone(),
-                        title: filename,
+                        title: filename.clone(),
                         body: contents.clone(),
-                        thumbnail_url: image_path,
+                        thumbnail_url: String::from(""), // TODO: this will be a presigned-url
                     };
 
                     let conn = &mut state.connection.lock().await;
@@ -245,7 +295,23 @@ async fn find_matches(
 
 async fn get_all_docs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::models::Document>> {
     let conn = &mut state.connection.lock().await;
-    let docs = documents::table.load(conn.deref_mut()).unwrap();
+    let s3_client = state.s3_client.lock().await;
+    let mut docs: Vec<crate::models::Document> = documents::table.load(conn.deref_mut()).unwrap();
+    // for each document, get a presigned url
+
+    for doc in docs.iter_mut() {
+        let url = s3::get_object(
+            &s3_client,
+            "papers-dev",
+            format!("{}/thumbnail.png", doc.id).as_ref(),
+            60 * 60,
+        )
+        .await
+        .expect("Expected URL");
+
+        doc.thumbnail_url = url.clone();
+        println!("URL: {}", url.clone());
+    }
     return Json(docs);
 }
 
