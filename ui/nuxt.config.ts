@@ -1,3 +1,4 @@
+import tailwindcss from "@tailwindcss/vite";
 import AutoImport from "unplugin-auto-import/vite";
 import { NaiveUiResolver } from "unplugin-vue-components/resolvers";
 import Components from "unplugin-vue-components/vite";
@@ -5,6 +6,7 @@ import Components from "unplugin-vue-components/vite";
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
     devtools: { enabled: true },
+    css: ["~/assets/css/main.css"],
     modules: ["nuxtjs-naive-ui"],
     compatibilityDate: "2025-07-15",
     runtimeConfig: {
@@ -29,6 +31,7 @@ export default defineNuxtConfig({
             Components({
                 resolvers: [NaiveUiResolver()],
             }),
+            tailwindcss(),
         ],
     },
     build: {
