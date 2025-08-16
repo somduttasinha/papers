@@ -32,7 +32,7 @@ async function customRequest({ file, onFinish, onError }) {
     formData.append("file", file.file);
 
     try {
-        const res = await fetch("http://localhost:8080/api/upload/doc", {
+        const res = await fetch("http://localhost:8080/api/docs/upload", {
             method: "POST",
             body: formData,
         });

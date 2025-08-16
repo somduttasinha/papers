@@ -1,10 +1,10 @@
 use crate::Command;
-use crate::Path;
 use image::ImageBuffer;
 use pdfium_render::prelude::PdfPageRenderRotation;
 use pdfium_render::prelude::PdfRenderConfig;
 use pdfium_render::prelude::Pdfium;
 use pdfium_render::prelude::PdfiumError;
+use std::path::Path;
 use tantivy::Term;
 use tantivy::query::BooleanQuery;
 use tantivy::query::FuzzyTermQuery;

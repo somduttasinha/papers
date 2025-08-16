@@ -2,7 +2,9 @@ use aws_config::BehaviorVersion;
 use aws_sdk_s3::Client;
 use aws_sdk_s3::config::Builder as S3ConfigBuilder;
 use aws_sdk_s3::primitives::ByteStream;
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
+use axum::http::{HeaderValue, StatusCode};
+use axum::response::{IntoResponse, Response};
 use diesel::{Connection, PgConnection, RunQueryDsl, SelectableHelper};
 use dotenvy::dotenv;
 use image::codecs::png::PngEncoder;
@@ -10,7 +12,6 @@ use image::{ExtendedColorType, ImageEncoder};
 use std::collections::HashMap;
 use std::env;
 use std::ops::DerefMut;
-use std::path::Path;
 use std::sync::Arc;
 use tantivy::directory::MmapDirectory;
 use tantivy::query::QueryParser;
@@ -18,6 +19,7 @@ use tantivy::{Document, TantivyDocument};
 use tempfile::NamedTempFile;
 use tokio::process::Command;
 use tokio::sync::Mutex;
+use tokio_util::io::ReaderStream;
 
 use axum::extract::{Query, State, multipart};
 use axum::routing::{get, post};
@@ -65,7 +67,7 @@ async fn main() -> tantivy::Result<()> {
         .expect("Expected to create bucket");
 
     let index_path_raw = "tmp/index";
-    let index_dir = Path::new(&index_path_raw);
+    let index_dir = std::path::Path::new(&index_path_raw);
 
     let index_dir = MmapDirectory::open(index_dir)?;
 
@@ -95,10 +97,9 @@ async fn main() -> tantivy::Result<()> {
 
     let get_documents_routes: Router<()> = Router::new()
         .route("/", get(get_all_docs))
-        .with_state(Arc::clone(&state));
-
-    let upload_routes: Router<()> = Router::new()
-        .route("/doc", post(save_and_upsert))
+        .route("/download/{id}", get(download_doc))
+        .route("/preview/{id}", get(preview_doc))
+        .route("/upload", post(save_and_upsert))
         .with_state(Arc::clone(&state));
 
     let search_routes: Router<()> = Router::new()
@@ -106,7 +107,6 @@ async fn main() -> tantivy::Result<()> {
         .with_state(Arc::clone(&state));
 
     let api_routes = Router::new()
-        .nest("/upload", upload_routes)
         .nest("/search", search_routes)
         .nest("/docs", get_documents_routes);
 
@@ -124,12 +124,86 @@ async fn main() -> tantivy::Result<()> {
     Ok(())
 }
 
+async fn download_doc(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let s3_client = &mut state.s3_client.lock().await;
+    let out = s3::get_object(
+        &s3_client,
+        "papers-dev",
+        format!("{}/document.pdf", id).as_ref(),
+    )
+    .await
+    .expect("Expected URL");
+
+    let content_type = out.content_type.unwrap_or("application/pdf".to_string());
+
+    let content_length = out.content_length;
+
+    let stream = out.body.into_async_read();
+    let stream = ReaderStream::new(stream);
+
+    let axum_body = Body::from_stream(stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            axum::http::header::CONTENT_DISPOSITION,
+            HeaderValue::from_str("attachment; filename=\"document.pdf\"").unwrap(),
+        )
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .header(
+            axum::http::header::CONTENT_LENGTH,
+            content_length.expect("Expected content length").to_string(),
+        )
+        .body(axum_body)
+        .unwrap()
+}
+
+async fn preview_doc(
+    State(state): State<Arc<AppState>>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> impl IntoResponse {
+    let s3_client = &mut state.s3_client.lock().await;
+    let out = s3::get_object(
+        &s3_client,
+        "papers-dev",
+        format!("{}/document.pdf", id).as_ref(),
+    )
+    .await
+    .expect("Expected URL");
+
+    let content_type = out.content_type.unwrap_or("application/pdf".to_string());
+
+    let content_length = out.content_length;
+
+    let stream = out.body.into_async_read();
+    let stream = ReaderStream::new(stream);
+
+    let axum_body = Body::from_stream(stream);
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(
+            axum::http::header::CONTENT_DISPOSITION,
+            HeaderValue::from_static(r#"inline; filename="preview.pdf""#),
+        )
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .header(
+            axum::http::header::CONTENT_LENGTH,
+            content_length.expect("Expected content length").to_string(),
+        )
+        .body(axum_body)
+        .unwrap()
+}
+
 /// We get the multipart form data as a stream of fields, to avoid overloading RAM for large files,
 /// we will save to disk as we receive them and build the tantivy::document in memory, we only
 /// commit once we have all the data for atomicity.
 async fn save_and_upsert(State(state): State<Arc<AppState>>, mut multipart: multipart::Multipart) {
     let tmp = NamedTempFile::new().expect("Expected a tempfile"); // created on disk
-    let path = tmp.path();
+    let path: &std::path::Path = tmp.path();
 
     println!("Path: {}", path.display());
 
@@ -300,7 +374,7 @@ async fn get_all_docs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::mod
     // for each document, get a presigned url
 
     for doc in docs.iter_mut() {
-        let url = s3::get_object(
+        let url = s3::get_object_url(
             &s3_client,
             "papers-dev",
             format!("{}/thumbnail.png", doc.id).as_ref(),

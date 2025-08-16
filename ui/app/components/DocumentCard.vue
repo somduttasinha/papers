@@ -10,13 +10,15 @@
         </div>
 
         <div class="actions">
-            <a class="action" @click="$emit('view', docId)" aria-label="View document">
+            <a class="action" :href="`http://localhost:8080/api/docs/preview/${docId}`" :target="`_blank`"
+                aria-label="View document">
                 <Eye24Regular />
             </a>
 
-            <button class="action" :href="downloadUrl" download aria-label="Download document">
+            <a class="action" :href="`http://localhost:8080/api/docs/download/${docId}`" :target="`_blank`"
+                aria-label="Download document">
                 <ArrowDownload16Regular />
-            </button>
+            </a>
 
             <a class="action">
                 <Share24Regular />
@@ -37,24 +39,17 @@ const props = defineProps<{
     docId: string | number;
     /** Optional bits below */
     title: string;
-    downloadUrl?: string;
 }>();
 
-const emit = defineEmits<{ (e: "view", docId: string | number): void }>();
+const emit = defineEmits<{
+    (e: "view", docId: string | number): void;
+    (e: "download", docId: string | number): void;
+}>();
 
 const emitView = () => emit("view", props.docId);
 
 const titleAlt = computed(() =>
     props.title ? `Preview of ${props.title}` : "Document preview",
-);
-
-const downloadHref = computed(
-    () => props.downloadUrl ?? `/api/documents/${props.docId}/download`,
-);
-
-const downloadName = computed(
-    () =>
-        (props.title?.replace(/\s+/g, "_") || `document_${props.docId}`) + ".pdf",
 );
 </script>
 
@@ -158,8 +153,8 @@ svg {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 38px;
-    height: 38px;
+    width: 30px;
+    height: 30px;
     border-radius: 10px;
     border: 1px solid #e5e7eb;
     background: #fff;

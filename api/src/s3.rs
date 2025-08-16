@@ -2,7 +2,10 @@
 
 use std::{error::Error, time::Duration};
 
-use aws_sdk_s3::{Client, presigning::PresigningConfig, primitives::ByteStream};
+use aws_sdk_s3::{
+    Client, operation::get_object::GetObjectOutput, presigning::PresigningConfig,
+    primitives::ByteStream,
+};
 
 pub async fn ensure_bucket(
     client: &Client,
@@ -45,7 +48,7 @@ pub async fn upload_object(
 }
 
 /// Generate a URL for a presigned GET request.
-pub async fn get_object(
+pub async fn get_object_url(
     client: &Client,
     bucket: &str,
     key: &str,
@@ -65,3 +68,19 @@ pub async fn get_object(
 
     Ok(presigned_request.uri().to_string())
 }
+
+pub async fn get_object(
+    client: &Client,
+    bucket: &str,
+    key: &str,
+) -> Result<GetObjectOutput, Box<dyn Error>> {
+    client
+        .get_object()
+        .bucket(bucket)
+        .key(key)
+        .send()
+        .await
+        .map_err(Into::into)
+}
+
+// function with lifetime

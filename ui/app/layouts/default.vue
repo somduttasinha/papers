@@ -3,8 +3,13 @@
         <!-- Sidebar -->
         <n-layout-sider bordered collapse-mode="width" :collapsed-width="64" :width="200" show-trigger
             collapse-trigger="bar">
-            <div class="logo">📚</div>
-            <n-menu :options="menuOptions" @update:value="handleUpdateValue" />
+            <div class="logo">
+                <NuxtLink to="/" class="flex items-center space-x-2">
+                    <img src="/papers-logo.svg" alt="Papers logo" />
+                </NuxtLink>
+            </div>
+
+            <n-menu :options="menuOptions" />
         </n-layout-sider>
 
         <!-- Main layout -->
@@ -12,7 +17,7 @@
             <n-layout-header bordered class="top-nav">
                 <div class="nav-content">
                     <div class="nav-left">
-                        <h2 class="logo">papers</h2>
+                        <!-- render this svg: public/papers-logo.svg -->
                     </div>
                     <div class="nav-centre">
                         <NAutoComplete v-model:value="q" :options="options" placeholder="Search..." clearable
@@ -44,21 +49,16 @@ import { h } from "vue";
 import { RouterLink } from "vue-router";
 import {
     DocumentOutline as DocumentIcon,
-    BookOutline as BookIcon,
     HomeOutline as HomeIcon,
-    PersonOutline as PersonIcon,
-    WineOutline as WineIcon,
 } from "@vicons/ionicons5";
 
 import { useDebounceFn } from "@vueuse/core";
 
-import { NAutoComplete, NIcon, useMessage } from "naive-ui";
+import { NAutoComplete, NIcon } from "naive-ui";
 
 function renderIcon(icon: Component) {
     return () => h(NIcon, null, { default: () => h(icon) });
 }
-
-const message = useMessage();
 
 const q = ref("");
 const options = ref<string[]>([]);
@@ -123,10 +123,6 @@ const menuOptions: MenuOption[] = [
         icon: renderIcon(DocumentIcon),
     },
 ];
-
-function handleUpdateValue(key: string, item: MenuOption) {
-    message.info(`Selected: ${key}`);
-}
 </script>
 
 <style scoped>

@@ -2,8 +2,8 @@
     <div class="documents">
         <div v-if="loading">Loading documents...</div>
         <div v-else-if="error">Error: {{ error }}</div>
-        <DocumentCard v-else v-for="document in documents" :key="document.id" :image-src="document.thumbnail_url"
-            :doc-id="document.id" :title="document.title" />
+        <DocumentCard @view="previewDoc" @download="downloadDoc" v-else v-for="document in documents" :key="document.id"
+            :image-src="document.thumbnail_url" :doc-id="document.id" :title="document.title" />
     </div>
 </template>
 
@@ -23,6 +23,49 @@ const loading = ref(true);
 const error = ref("");
 
 let aborter: AbortController | null = null;
+
+async function downloadDoc(docId: string | number) {
+    if (aborter) {
+        aborter.abort();
+    }
+    aborter = new AbortController();
+    const response = await fetch(
+        `http://localhost:8080/api/docs/download/${docId}`,
+        {
+            signal: aborter.signal,
+        },
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "document.pdf";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}
+
+async function previewDoc(docId: string | number) {
+    if (aborter) {
+        aborter.abort();
+    }
+    aborter = new AbortController();
+    const response = await fetch(
+        `http://localhost:8080/api/docs/preview/${docId}`,
+        {
+            signal: aborter.signal,
+        },
+    );
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    const presigned_url = await response.text();
+    window.open(presigned_url, "_blank");
+}
 
 onMounted(async () => {
     try {
