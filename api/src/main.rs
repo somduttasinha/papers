@@ -30,6 +30,7 @@ use tantivy::{Index, IndexWriter, ReloadPolicy};
 use tower_http::cors::Any;
 use tower_http::cors::CorsLayer;
 
+use crate::s3::S3Client;
 use crate::schema::documents;
 
 mod models;
@@ -42,7 +43,7 @@ struct AppState {
     schema: Schema,
     writer: Mutex<IndexWriter>,      // thread safe index writer
     connection: Mutex<PgConnection>, // thread safe db connection
-    s3_client: Mutex<Client>,        // thread safe s3 client
+    s3_client: Mutex<S3Client>,      // thread safe s3 client
 }
 
 #[tokio::main]
@@ -60,11 +61,14 @@ async fn main() -> tantivy::Result<()> {
         cfg = cfg.force_path_style(true);
     }
 
-    let s3_client = Client::from_conf(cfg.build());
+    let client = Client::from_conf(cfg.build());
 
-    s3::ensure_bucket(&s3_client, "papers-dev")
-        .await
-        .expect("Expected to create bucket");
+    let s3_client = S3Client::new(client, "papers-dev".to_string());
+
+    match s3_client.ensure_bucket().await {
+        Ok(_) => println!("Bucket exists"),
+        Err(e) => println!("Error: {}", e),
+    }
 
     let index_path_raw = "tmp/index";
     let index_dir = std::path::Path::new(&index_path_raw);
@@ -92,7 +96,7 @@ async fn main() -> tantivy::Result<()> {
         schema,
         writer: Mutex::<tantivy::IndexWriter>::new(index_writer),
         connection: Mutex::<PgConnection>::new(connection),
-        s3_client: Mutex::<Client>::new(s3_client),
+        s3_client: Mutex::<S3Client>::new(s3_client),
     });
 
     let get_documents_routes: Router<()> = Router::new()
@@ -129,13 +133,10 @@ async fn download_doc(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let s3_client = &mut state.s3_client.lock().await;
-    let out = s3::get_object(
-        &s3_client,
-        "papers-dev",
-        format!("{}/document.pdf", id).as_ref(),
-    )
-    .await
-    .expect("Expected URL");
+    let out = s3_client
+        .get_object(format!("{}/document.pdf", id).as_ref())
+        .await
+        .expect("Expected URL");
 
     let content_type = out.content_type.unwrap_or("application/pdf".to_string());
 
@@ -166,13 +167,10 @@ async fn preview_doc(
     axum::extract::Path(id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
     let s3_client = &mut state.s3_client.lock().await;
-    let out = s3::get_object(
-        &s3_client,
-        "papers-dev",
-        format!("{}/document.pdf", id).as_ref(),
-    )
-    .await
-    .expect("Expected URL");
+    let out = s3_client
+        .get_object(format!("{}/document.pdf", id).as_ref())
+        .await
+        .expect("Expected URL");
 
     let content_type = out.content_type.unwrap_or("application/pdf".to_string());
 
@@ -252,27 +250,25 @@ async fn save_and_upsert(State(state): State<Arc<AppState>>, mut multipart: mult
                         )
                         .unwrap();
 
-                    s3::upload_object(
-                        &s3_client,
-                        "papers-dev",
-                        "application/pdf",
-                        &format!("{}/document.pdf", id),
-                        ByteStream::from_path(path)
-                            .await
-                            .expect("Failed to get bytes from path"),
-                    )
-                    .await
-                    .expect("Failed to upload to s3");
+                    s3_client
+                        .upload_object(
+                            "application/pdf",
+                            &format!("{}/document.pdf", id),
+                            ByteStream::from_path(path)
+                                .await
+                                .expect("Failed to get bytes from path"),
+                        )
+                        .await
+                        .expect("Failed to upload to s3");
 
-                    s3::upload_object(
-                        &s3_client,
-                        "papers-dev",
-                        "image/png",
-                        &format!("{}/thumbnail.png", id),
-                        ByteStream::from(buf),
-                    )
-                    .await
-                    .expect("Failed to upload to s3");
+                    s3_client
+                        .upload_object(
+                            "image/png",
+                            &format!("{}/thumbnail.png", id),
+                            ByteStream::from(buf),
+                        )
+                        .await
+                        .expect("Failed to upload to s3");
 
                     let new_doc = crate::models::Document {
                         id: id.clone(),
@@ -374,14 +370,10 @@ async fn get_all_docs(State(state): State<Arc<AppState>>) -> Json<Vec<crate::mod
     // for each document, get a presigned url
 
     for doc in docs.iter_mut() {
-        let url = s3::get_object_url(
-            &s3_client,
-            "papers-dev",
-            format!("{}/thumbnail.png", doc.id).as_ref(),
-            60 * 60,
-        )
-        .await
-        .expect("Expected URL");
+        let url = s3_client
+            .get_object_url(format!("{}/thumbnail.png", doc.id).as_ref(), 60 * 60)
+            .await
+            .expect("Expected URL");
 
         doc.thumbnail_url = url.clone();
         println!("URL: {}", url.clone());
