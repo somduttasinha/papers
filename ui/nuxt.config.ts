@@ -11,7 +11,7 @@ export default defineNuxtConfig({
     compatibilityDate: "2025-07-15",
     runtimeConfig: {
         public: {
-            apiBase: "http://localhost:8080",
+            apiBase: process.env.API_BASE,
         },
     },
     vite: {

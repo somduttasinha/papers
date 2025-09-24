@@ -29,7 +29,7 @@
                             <template #icon>
                                 <n-icon><i class="i-ph-user-circle-bold" /></n-icon>
                             </template>
-                            User
+                            IN DEVELOPMENT
                         </n-button>
                     </div>
                 </div>
@@ -83,6 +83,7 @@ const fetchSuggestions = useDebounceFn(async () => {
             query: q.value,
         },
         signal: aborter.signal as any,
+        server: false,
     });
 
     if (!error.value && Array.isArray(data.value)) {
