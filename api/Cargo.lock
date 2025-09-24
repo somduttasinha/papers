@@ -1159,6 +1159,7 @@ dependencies = [
  "diesel_derives",
  "itoa",
  "pq-sys",
+ "r2d2",
 ]
 
 [[package]]
@@ -1318,30 +1319,6 @@ checksum = "778e2ac28f6c47af28e4907f13ffd1e1ddbd400980a9abd7c8df189bf578a5ad"
 dependencies = [
  "libc",
  "windows-sys 0.60.2",
-]
-
-[[package]]
-name = "explore-rs"
-version = "0.1.0"
-dependencies = [
- "aws-config",
- "aws-sdk-s3",
- "axum",
- "chrono",
- "diesel",
- "dotenvy",
- "image",
- "pdfium-render",
- "regex",
- "rusty-tesseract",
- "serde",
- "serde_json",
- "tantivy",
- "tempfile",
- "tokio",
- "tokio-util",
- "tower-http",
- "uuid",
 ]
 
 [[package]]
@@ -2459,6 +2436,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "papers-api"
+version = "0.1.0"
+dependencies = [
+ "aws-config",
+ "aws-sdk-s3",
+ "axum",
+ "chrono",
+ "diesel",
+ "dotenvy",
+ "image",
+ "pdfium-render",
+ "r2d2",
+ "regex",
+ "rusty-tesseract",
+ "serde",
+ "serde_json",
+ "tantivy",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "tower-http",
+ "uuid",
+]
+
+[[package]]
 name = "parking_lot"
 version = "0.12.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2667,6 +2669,17 @@ name = "r-efi"
 version = "5.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "69cdb34c158ceb288df11e18b4bd39de994f6657d83847bdffdbd7f346754b0f"
+
+[[package]]
+name = "r2d2"
+version = "0.8.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "51de85fb3fb6524929c8a2eb85e6b6d363de4e8c48f9e2c2eac4944abc181c93"
+dependencies = [
+ "log",
+ "parking_lot",
+ "scheduled-thread-pool",
+]
 
 [[package]]
 name = "rand"
@@ -3067,6 +3080,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1f29ebaa345f945cec9fbbc532eb307f0fdad8161f281b6369539c8d84876b3d"
 dependencies = [
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "scheduled-thread-pool"
+version = "0.2.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3cbc66816425a074528352f5789333ecff06ca41b36b0b0efdfbb29edc391a19"
+dependencies = [
+ "parking_lot",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
 use crate::Command;
+use dotenvy::dotenv;
 use image::ImageBuffer;
 use pdfium_render::prelude::PdfPageRenderRotation;
 use pdfium_render::prelude::PdfRenderConfig;
@@ -33,7 +34,9 @@ pub fn export_pdf_to_jpegs(
     // Bind to a Pdfium library in the same directory as our Rust executable.
     // See the "Dynamic linking" section below.
 
-    let pdfium = Pdfium::new(Pdfium::bind_to_library("/opt/pdfium/7350/lib/libpdfium.so").unwrap());
+    dotenv().ok();
+    let pdfium_path = std::env::var("PDFIUM_PATH").expect("Expected PDFIUM_PATH env var");
+    let pdfium = Pdfium::new(Pdfium::bind_to_library(&pdfium_path).unwrap());
 
     // Load the document from the given path...
 

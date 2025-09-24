@@ -1,5 +1,5 @@
 [package]
-name = "explore-rs"
+name = "papers-api"
 version = "0.1.0"
 edition = "2024"
 
@@ -16,9 +16,10 @@ pdfium-render = "0.8.4"
 image = {version = "0.25", features = ["png"]}
 uuid = { version = "1.18.0", features = ["v4"] }
 regex = "1.11.1"
-diesel = { version = "2.2.0", features = ["postgres"] }
+diesel = { version = "2.2.0", features = ["postgres", "r2d2"] }
 dotenvy = "0.15"
 aws-config = "1.8.5"
 aws-sdk-s3 = "1.103.0"
 chrono = "0.4.41"
 tokio-util = "0.7.16"
+r2d2 = "0.8.10"
